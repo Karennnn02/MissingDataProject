@@ -1,0 +1,48 @@
+---
+title: "Missing Data Project"
+author: "Karen Cao"
+date: "2/1/2019"
+output: pdf_document
+---
+```{r, include = FALSE}
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+# DV: DataValue -> TFR values
+# IV: RecallLag
+tfr.ini = read.csv(file = "tfr_data.csv", sep = ",")
+tfr.ini$year = format(as.Date(format(date_decimal(tfr.ini$TimeMid), "%Y-%m-%d")), "%Y")
+
+tfr.ini =
+  tfr.ini %>%
+  group_by(Country.or.area, year) %>%
+  select(Country.or.area, year, DataValue, RecallLag) %>%
+  summarise(DataValue = mean(DataValue), RecallLag = mean(RecallLag)) 
+
+timeline = data_frame(year = rep(1950:2016, each = length(unique(tfr.ini$Country.or.area))))
+timeline$Country.or.area = rep(unique(tfr.ini$Country.or.area), 67)
+
+tfr = merge(x = timeline, y = tfr.ini, by = c("Country.or.area", "year"), all.x = TRUE)
+
+# Add two categorical IVs: region & development
+reg.dev = read.csv(file = "un_subregion.csv", sep = ",")
+dat = merge(x = tfr, y = reg.dev, by = "Country.or.area")
+
+# Add GDP
+read.csv(file.choose(), header = T, sep = ",")
+
+
+
+
+
+write.csv(dat, file = "MissingDataProjectDataset.csv")
+
+rm(list = ls())
+```
+
+```{r}
+dat = read.csv(file = "MissingDataProjectDataset.csv", sep = ",")
+```
+
