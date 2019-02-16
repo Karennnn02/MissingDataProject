@@ -9,7 +9,7 @@ library(dplyr)
 library(lubridate)
 ```
 
-```{r}
+```{r, include = FALSE}
 # DV: DataValue -> TFR values
 # IV: RecallLag
 tfr.ini = read.csv(file = "tfr_data.csv", sep = ",")
@@ -30,19 +30,37 @@ tfr = merge(x = timeline, y = tfr.ini, by = c("Country.or.area", "year"), all.x 
 reg.dev = read.csv(file = "un_subregion.csv", sep = ",")
 dat = merge(x = tfr, y = reg.dev, by = "Country.or.area")
 
-# Add GDP
-read.csv(file.choose(), header = T, sep = ",")
-
-
-
-
-
-write.csv(dat, file = "MissingDataProjectDataset.csv")
+write.csv(dat, file = "tfr_panel_data.csv")
 
 rm(list = ls())
+
+# Subset the data to include "India" ONLY
+# Subset the data to include only data ranging from 1950 to 2016
+dat = read.csv(file = "tfr_panel_data.csv", sep = ",") %>% 
+  filter(year >= 1960, Country.or.area == "India")
+
+# Add GDP as a continuous variable
+gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",") 
+gdp = gdp %>%
+  filter(Country.Name == "India")
+names(gdp) = substring(names(gdp), 2)
+gdp = as.data.frame(t(gdp))
+gdp$year = row.names(gdp)
+
+data = merge(x = dat, y = gdp, by = "year") %>%
+  select(c(DataValue, year, RecallLag, V1))
+
+rm(dat)
+rm(gdp)
+
+
 ```
 
 ```{r}
-dat = read.csv(file = "MissingDataProjectDataset.csv", sep = ",")
+
+# Add GDP
+gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",")
+
+
 ```
 
