@@ -7,6 +7,7 @@ output: pdf_document
 ```{r, include = FALSE}
 library(dplyr)
 library(lubridate)
+library(ggplot2)
 ```
 
 # Data Pre-Processing
@@ -32,6 +33,8 @@ reg.dev = read.csv(file = "un_subregion.csv", sep = ",")
 dat = merge(x = tfr, y = reg.dev, by = "Country.or.area")
 
 write.csv(dat, file = "tfr_panel_data.csv")
+
+rm(list = ls())
 ```
 
 ```{r, include = FALSE}
@@ -45,22 +48,94 @@ gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",")
 gdp = gdp %>%
   filter(Country.Name == "India")
 gdp = as.numeric(t(gdp))
-data$gdp = round(gdp[!is.na(gdp)][1:57] / 1000000000, 2)
+dat$gdp = round(gdp[!is.na(gdp)][1:57] / 1000000000, 2)
 
 # Recode RecallLag to categorical
-data$RecallLag = abs(data$RecallLag)
+dat$RecallLag = abs(dat$RecallLag)
 # hist(data$RecallLag)
-data$recall = cut(data$RecallLag,
-                  breaks = c(-Inf, 1, 4, Inf),
-                  labels = c("Immediate", "Fast", "Slow"))
+dat$recall = cut(dat$RecallLag,
+                 breaks = c(-Inf, 1, 4, Inf),
+                 labels = c("Immediate", "Fast", "Slow"))
+
+dat$DataValue = round(dat$DataValue, 1)
 
 keep = c("DataValue", "year", "gdp", "recall")
-data = data[ ,keep]
-names(data) = c("TFR", "Year", "GDP", "Recall")
+dat = dat[ ,keep]
+names(dat) = c("TFR", "Year", "GDP", "Recall")
 
-rm(dat)
 rm(gdp)
 rm(keep)
+
+#
+dat$TFR_missing = ifelse(is.na(dat$TFR), 0, 1)
+dat$Recall_missing = ifelse(is.na(dat$Recall), 0, 1)
+```
+
+```{r}
+# Function that performs imputation
+imp = function(x, method){
+  missing = is.na(x)
+  x.obs = x[!missing]
+  imputed = x
+  imputed[missing] <- method(x.obs)
+  
+  # Output the imputed vector
+  return (imputed)
+}
+```
+
+# Homework 2
+## 1. Mean Imputation
+Use mean imputation to fill in missing values in variable "TFR".
+```{r}
+dat$tfr.mean.imp = imp(dat$TFR, method = mean)
+ggplot(dat, aes(Year, tfr.mean.imp)) + geom_point()
+```
+
+## 2. Mode Imputation
+Use mode imputation to fill in missing values in variable "recall".
+```{r}
+# Functions that performs mode imputation
+mode = function(x) {
+  ta = table(x)
+  tam = max(ta)
+  if (all(ta == tam))
+    mod = NA
+  else
+    mod = names(ta)[ta == tam]
+  return(mod)
+}
+
+dat$recall.mode.imp = imp(dat$Recall, method = mode)
+
+par(mfrow = c(1, 2))
+barplot(table(dat$Recall), ylim = c(0, 35))
+barplot(table(dat$recall.mode.imp), ylim = c(0, 35))
+```
+
+## 3. Analysis
+### a) Complete Cases
+```{r}
+fit1 = lm(TFR ~ Year + GDP + Recall, data = dat)
+```
+
+### b) Imputed Data
+mean imputation for TFR and mode imputation for Recall.
+```{r}
+lm(tfr.mean.imp ~ Year + GDP + recall.mode.imp, data = dat)
+```
+
+# Homework 3
+## 1. Regression Imputation
+```{r}
+fit1
+
+dat %>%
+  filter(is.na(TFR))
+
 ```
 
 
+## 2. Analysis
+
+missingness of the categorical varaible is perfectly correlated with the missingness of the numeric variable(TFR), therefore the two method produce the same results. 
