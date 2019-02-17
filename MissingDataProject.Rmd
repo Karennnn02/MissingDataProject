@@ -9,6 +9,7 @@ library(dplyr)
 library(lubridate)
 ```
 
+# Data Pre-Processing
 ```{r, include = FALSE}
 # DV: DataValue -> TFR values
 # IV: RecallLag
@@ -31,36 +32,35 @@ reg.dev = read.csv(file = "un_subregion.csv", sep = ",")
 dat = merge(x = tfr, y = reg.dev, by = "Country.or.area")
 
 write.csv(dat, file = "tfr_panel_data.csv")
+```
 
-rm(list = ls())
-
+```{r, include = FALSE}
 # Subset the data to include "India" ONLY
-# Subset the data to include only data ranging from 1950 to 2016
+# Subset the data to include only data ranging from 1960 to 2016
 dat = read.csv(file = "tfr_panel_data.csv", sep = ",") %>% 
   filter(year >= 1960, Country.or.area == "India")
 
-# Add GDP as a continuous variable
+# Add GDP as a continuous variable (round to 2 decimals)
 gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",") 
 gdp = gdp %>%
   filter(Country.Name == "India")
-names(gdp) = substring(names(gdp), 2)
-gdp = as.data.frame(t(gdp))
-gdp$year = row.names(gdp)
+gdp = as.numeric(t(gdp))
+data$gdp = round(gdp[!is.na(gdp)][1:57] / 1000000000, 2)
 
-data = merge(x = dat, y = gdp, by = "year") %>%
-  select(c(DataValue, year, RecallLag, V1))
+# Recode RecallLag to categorical
+data$RecallLag = abs(data$RecallLag)
+# hist(data$RecallLag)
+data$recall = cut(data$RecallLag,
+                  breaks = c(-Inf, 1, 4, Inf),
+                  labels = c("Immediate", "Fast", "Slow"))
+
+keep = c("DataValue", "year", "gdp", "recall")
+data = data[ ,keep]
+names(data) = c("TFR", "Year", "GDP", "Recall")
 
 rm(dat)
 rm(gdp)
-
-
+rm(keep)
 ```
 
-```{r}
-
-# Add GDP
-gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",")
-
-
-```
 
