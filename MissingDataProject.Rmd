@@ -1,101 +1,71 @@
 ---
-title: "Missing Data Project"
+title: "Missing Data HW3: Please refer to Section 2.c), 3.c) and 4.b) for this Assignment"
 author: "Karen Cao"
-date: "2/1/2019"
+date: "2/19/2019"
 output: pdf_document
 ---
+
 ```{r, include = FALSE}
+# Load all required dependencies
 library(dplyr)
-library(lubridate)
 library(ggplot2)
+library(mice)
 ```
 
-# Data Pre-Processing
-```{r, include = FALSE}
-# DV: DataValue -> TFR values
-# IV: RecallLag
-tfr.ini = read.csv(file = "tfr_data.csv", sep = ",")
-tfr.ini$year = format(as.Date(format(date_decimal(tfr.ini$TimeMid), "%Y-%m-%d")), "%Y")
+# 1. Data and Objective
+The dataset is a panel data contains average total fertility rate ("TFR") for women in *India* from 1960 to 2016. The data also contains India's GDP values and recall lag with respect to each TFR value. There're 3 numeric and 1 categorical variables in this dataset and they are:
 
-tfr.ini =
-  tfr.ini %>%
-  group_by(Country.or.area, year) %>%
-  select(Country.or.area, year, DataValue, RecallLag) %>%
-  summarise(DataValue = mean(DataValue), RecallLag = mean(RecallLag)) 
+* TFR: average total fertility for women in India (a.k.a. the average number of children a women will give birth to over her entire fertility period).
+* Year: year ranging from 1960 to 2016.
+* GDP: India's GDP in billion dollars.
+* Recall: length of the recall period between time of data collection and the date for the TFR values. This variable is numeric in the original dataset but has been recoded for the purpose of this analysis. Recall is categorized as 1) "Immediate" if the recall period is less than or equal to 1 year, 2) "Fast" if the recall period is less than or equal to 4 years and greater than 1 year, and 3) "Slow" if the recall period is greater than 4 years. 
 
-timeline = data_frame(year = rep(1950:2016, each = length(unique(tfr.ini$Country.or.area))))
-timeline$Country.or.area = rep(unique(tfr.ini$Country.or.area), 67)
+The objective is to explore the relationship between the average total fertility rate and the other variables in the dataset using regression while considering TFR as the dependent variable and the rest as independent variables. 
 
-tfr = merge(x = timeline, y = tfr.ini, by = c("Country.or.area", "year"), all.x = TRUE)
+```{r}
+# Read and examine the data
+dat = read.csv(file = "tfr_india.csv", sep = ",")[, 2:5]
+head(dat)
 
-# Add two categorical IVs: region & development
-reg.dev = read.csv(file = "un_subregion.csv", sep = ",")
-dat = merge(x = tfr, y = reg.dev, by = "Country.or.area")
-
-write.csv(dat, file = "tfr_panel_data.csv")
-
-rm(list = ls())
-```
-
-```{r, include = FALSE}
-# Subset the data to include "India" ONLY
-# Subset the data to include only data ranging from 1960 to 2016
-dat = read.csv(file = "tfr_panel_data.csv", sep = ",") %>% 
-  filter(year >= 1960, Country.or.area == "India")
-
-# Add GDP as a continuous variable (round to 2 decimals)
-gdp = read.csv(file.choose(), header = T, skip = 4, sep = ",") 
-gdp = gdp %>%
-  filter(Country.Name == "India")
-gdp = as.numeric(t(gdp))
-dat$gdp = round(gdp[!is.na(gdp)][1:57] / 1000000000, 2)
-
-# Recode RecallLag to categorical
-dat$RecallLag = abs(dat$RecallLag)
-# hist(data$RecallLag)
-dat$recall = cut(dat$RecallLag,
-                 breaks = c(-Inf, 1, 4, Inf),
-                 labels = c("Immediate", "Fast", "Slow"))
-
-dat$DataValue = round(dat$DataValue, 1)
-
-keep = c("DataValue", "year", "gdp", "recall")
-dat = dat[ ,keep]
-names(dat) = c("TFR", "Year", "GDP", "Recall")
-
-rm(gdp)
-rm(keep)
-
-#
+# Create "TFR_missing" and "Recall_missing", which indiate missingness of "TFR" and "Recall", respectively
+# 0 indicates missing value and 1 indicates otherwise
 dat$TFR_missing = ifelse(is.na(dat$TFR), 0, 1)
 dat$Recall_missing = ifelse(is.na(dat$Recall), 0, 1)
 ```
 
+# 2. Missing Data Imputation
+Variables "TFR" and "Recall" have missing values in the dataset. 
+
+* Use mean and regression imputation to fill in missing values in "TFR" (see Part 2.a) and 2.c), respectively).
+* Use mode imputation to fill in missing values in "Recall" (see Part 2 b)).
+
 ```{r}
-# Function that performs imputation
+# Create a function that performs imputation for missing values
+# The "method" argument in the function specifies the method used for missing value imputation
 imp = function(x, method){
   missing = is.na(x)
   x.obs = x[!missing]
   imputed = x
-  imputed[missing] <- method(x.obs)
-  
-  # Output the imputed vector
-  return (imputed)
+  imputed[missing] = method(x.obs)
+  return (imputed) # Output the imputed vector
 }
 ```
 
-# Homework 2
-## 1. Mean Imputation
-Use mean imputation to fill in missing values in variable "TFR".
+## a) Mean Imputation - "TFR"
 ```{r}
 dat$tfr.mean.imp = imp(dat$TFR, method = mean)
-ggplot(dat, aes(Year, tfr.mean.imp)) + geom_point()
+
+# Visualize imputed "TFR"
+ggplot(dat, aes(Year, tfr.mean.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
 ```
 
-## 2. Mode Imputation
-Use mode imputation to fill in missing values in variable "recall".
+## b) Mode Imputation - "Recall"
 ```{r}
-# Functions that performs mode imputation
+# Function that returns mode of a categorical variable
 mode = function(x) {
   ta = table(x)
   tam = max(ta)
@@ -108,34 +78,68 @@ mode = function(x) {
 
 dat$recall.mode.imp = imp(dat$Recall, method = mode)
 
-par(mfrow = c(1, 2))
-barplot(table(dat$Recall), ylim = c(0, 35))
-barplot(table(dat$recall.mode.imp), ylim = c(0, 35))
+# Visualize imputed "Recall"
+ggplot(dat, aes(recall.mode.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
 ```
 
-## 3. Analysis
-### a) Complete Cases
+## c) Regression Imputation - "TFR"
 ```{r}
-fit1 = lm(TFR ~ Year + GDP + Recall, data = dat)
+# First of all, build a model, "fit1", using ONLY completely observed variables "Year" and "GDP"
+fit1 = lm(TFR ~ Year + GDP, data = dat)
+
+# Impute missing "TFR" values based on fit1
+pred = predict(fit1, newdata = ic(dat))
+
+# Create a function that fills in missing TFR values using regression imputation
+reg.imp = function(x){
+  missing = is.na(x)
+  imputed = x
+  imputed[missing] = pred
+  return (imputed)
+}
+
+dat$tfr.reg.imp = reg.imp(dat$TFR)
+
+# Visualize imputed "TFR"
+ggplot(dat, aes(Year, tfr.reg.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
 ```
 
-### b) Imputed Data
-mean imputation for TFR and mode imputation for Recall.
+# 3. Regression Analysis
+Perform regression analysis using 1) complete cases, 2) imputed data where missing values in "TFR" were filled using mean imputation and those in "Recall" were filled using mode imputation and 3) imputed data where missing values in "TFR" were filled using regression imputation. 
+
+In all analyses, "TFR" is the dependent variable and "Year", "GDP" and "Recall" are independent variables. 
+
+## a) using Complete Cases
 ```{r}
-lm(tfr.mean.imp ~ Year + GDP + recall.mode.imp, data = dat)
+# the lm() function uses complete cases as default
+summary(lm(TFR ~ Year + GDP + Recall, data = dat))
 ```
 
-# Homework 3
-## 1. Regression Imputation
+## b) using Imputed Data -- Mean and Mode Imputation
 ```{r}
-fit1
-
-dat %>%
-  filter(is.na(TFR))
-
+summary(lm(tfr.mean.imp ~ Year + GDP + recall.mode.imp, data = dat))
 ```
 
+## c) using Imputed Data - Regression Imputation
+```{r}
+summary(lm(tfr.reg.imp ~ Year + GDP + Recall, data = dat))
+```
 
-## 2. Analysis
+# 4. Discussion
+## a) Complete Cases vs. Mean/Mode Imputation
+The linear regression results using complete cases and imputed data are quite different. In the regression using complete cases, all predictors have significant relationship with TFR while when regress using imputed data, "Year" is the only signifiant predictor. Furthermore, the three predictors explain ~98% of the variance in the data under the complete cases approach but they only explain ~52% of the variance using imputed data. This implies that using complete cases may be a better way to perform linear regression instead of using data imputed from mean (for the numeric variable TFR) and mode imputation (for the categorical variable Recall).
 
-missingness of the categorical varaible is perfectly correlated with the missingness of the numeric variable(TFR), therefore the two method produce the same results. 
+## b) Complete Cases vs. Regression Imputation
+The linear regression results using complete cases and imputed data with missing TFR values imputed using regression imputation are *exact the same* because variable "Recall" and "TFR" are perfectly correlated in the original dataset (That is to say, "TFR" is missing whenever "Recall" is missing). Since the function "lm()" in R uses complete cases as default, the linear regressions in Part 3.a) and 3.c) use the same subset of data and therefore have the exact same results. However, as we can see from the plot in Part 2.c), imputing TFR using regression imputation makes a lot more sense compared to doing that using mean imputation (see Part 2.a)).
+
+```{r}
+summary(lm(tfr.reg.imp ~ Year + GDP + recall.mode.imp, data = dat))
+```
+I re-did the analysis after filling missng "Recall" values using mode imputation so that it used the full dataset instead of just the complete cases. The result shows that all predictors are statistically significant and "Year", "GDP" and imputed recall (using mode imputation) explain ~99% variance of the data. This supports the earlier arugument that for imputing missing values in variable "TFR", regression imputation makes more sense than mean imputation.
