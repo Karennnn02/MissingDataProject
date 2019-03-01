@@ -1,15 +1,19 @@
 ---
-title: "Missing Data HW3: Please refer to Section 2.c), 3.c) and 4.b) for this Assignment"
+title: "Missing Data HW4: Please refer to Section 2.d), 2.e), 3.d) and 4.c) for this Assignment"
 author: "Karen Cao"
-date: "2/19/2019"
+date: "3/1/2019"
 output: pdf_document
 ---
 
 ```{r, include = FALSE}
 # Load all required dependencies
 library(dplyr)
+library(plyr)
 library(ggplot2)
 library(mice)
+
+# Set the seed
+set.seed(1234)
 ```
 
 # 1. Data and Objective
@@ -38,6 +42,7 @@ Variables "TFR" and "Recall" have missing values in the dataset.
 
 * Use mean and regression imputation to fill in missing values in "TFR" (see Part 2.a) and 2.c), respectively).
 * Use mode imputation to fill in missing values in "Recall" (see Part 2 b)).
+* Use regression imputation with noise to fill in missing values in "TFR" (see Part 2.d)) and "Recall.bi", which is a binary variable recoded from 3-level ordinal varaible "Recall" (see Part 2.e)).
 
 ```{r}
 # Create a function that performs imputation for missing values
@@ -94,14 +99,14 @@ fit1 = lm(TFR ~ Year + GDP, data = dat)
 pred = predict(fit1, newdata = ic(dat))
 
 # Create a function that fills in missing TFR values using regression imputation
-reg.imp = function(x){
+reg.imp = function(x, pred.value){
   missing = is.na(x)
   imputed = x
-  imputed[missing] = pred
+  imputed[missing] = pred.value
   return (imputed)
 }
 
-dat$tfr.reg.imp = reg.imp(dat$TFR)
+dat$tfr.reg.imp = reg.imp(dat$TFR, pred.value = pred)
 
 # Visualize imputed "TFR"
 ggplot(dat, aes(Year, tfr.reg.imp)) +
@@ -111,8 +116,48 @@ ggplot(dat, aes(Year, tfr.reg.imp)) +
        y = "TFR", colour = "Imputed?")
 ```
 
+## d) Regression Imputation with Noise - "TFR"
+```{r}
+# Generate noise and add it to the previous imputation
+noise = rnorm(n = length(pred), mean = 0, sd = summary(fit1)$sigma)
+pred.noise = pred + noise
+dat$tfr.reg.imp.noise = reg.imp(dat$TFR, pred.value = pred.noise)
+
+# Visualize imputed "TFR" using regression imputation with noise
+ggplot(dat, aes(Year, tfr.reg.imp.noise)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+```
+
+## e) Regression Imputation without Noise - "Recall.bi"
+Since there's no binary variable in the original dataset, I re-coded "Recall", which is a ordinal variable with three levels: "Immediate", "Fast" and "Slow", into a binary varaible called "Recall.bi". "Recall.bi" has two levels, "Immediate" and "Not Immediate", where "Fast" and "Slow" were combined into one level -- "Not Immediate". (0 - Not Immediate; 1 - Immediate)
+```{r}
+# Recode "Recall" into "Recall.bi"
+dat$Recall.bi = revalue(dat$Recall, replace = c("Fast" = "Not Immediate", "Slow" = "Not Immediate"), warn_missing = FALSE)
+
+# Fit another model "fit2" and predict missing "Recall.bi" values using "fit2" WITH noise
+fit2 = glm(Recall.bi ~ Year + GDP, data = dat[dat$Recall_missing == 1, ], family = "binomial")
+recall.bi.reg.imp.noise = round(predict(fit2, newdata = dat[dat$Recall_missing == 0,], type = "response") + noise, 0)
+
+# Save imputed "Recall.bi"
+dat$recall.bi.reg.imp.noise = reg.imp(dat$Recall.bi, pred.value = ifelse(recall.bi.reg.imp.noise == 1, "Immediate", "Not Immediate"))
+
+# Visualize imputed "Recall.bi"
+ggplot(dat, aes(recall.bi.reg.imp.noise)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period (Binary)", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+```
+
 # 3. Regression Analysis
-Perform regression analysis using 1) complete cases, 2) imputed data where missing values in "TFR" were filled using mean imputation and those in "Recall" were filled using mode imputation and 3) imputed data where missing values in "TFR" were filled using regression imputation. 
+Perform regression analysis using 
+
+* a) Complete cases,
+* b) Imputed data where missing values in "TFR" were filled using mean imputation and those in "Recall" were filled using mode imputation,
+* c) Imputed data where missing values in "TFR" were filled using regression imputation, and
+* d) Imputed data where missing values in "TFR" and "Recall.bi" were filled using regression imputation *with noise*
 
 In all analyses, "TFR" is the dependent variable and "Year", "GDP" and "Recall" are independent variables. 
 
@@ -132,6 +177,11 @@ summary(lm(tfr.mean.imp ~ Year + GDP + recall.mode.imp, data = dat))
 summary(lm(tfr.reg.imp ~ Year + GDP + Recall, data = dat))
 ```
 
+## d) using Imputed Data - Regression Imputation with Noise - "TFR" & "Recall.bi"
+```{r}
+summary(lm(tfr.reg.imp.noise ~ Year + GDP + recall.bi.reg.imp.noise, data = dat))
+```
+
 # 4. Discussion
 ## a) Complete Cases vs. Mean/Mode Imputation
 The linear regression results using complete cases and imputed data are quite different. In the regression using complete cases, all predictors have significant relationship with TFR while when regress using imputed data, "Year" is the only signifiant predictor. Furthermore, the three predictors explain ~98% of the variance in the data under the complete cases approach but they only explain ~52% of the variance using imputed data. This implies that using complete cases may be a better way to perform linear regression instead of using data imputed from mean (for the numeric variable TFR) and mode imputation (for the categorical variable Recall).
@@ -143,3 +193,10 @@ The linear regression results using complete cases and imputed data with missing
 summary(lm(tfr.reg.imp ~ Year + GDP + recall.mode.imp, data = dat))
 ```
 I re-did the analysis after filling missng "Recall" values using mode imputation so that it used the full dataset instead of just the complete cases. The result shows that all predictors are statistically significant and "Year", "GDP" and imputed recall (using mode imputation) explain ~99% variance of the data. This supports the earlier arugument that for imputing missing values in variable "TFR", regression imputation makes more sense than mean imputation.
+
+## c) Complete Cases vs. Regression Imputation with Noise - "TFR" & "Recall.bi"
+```{r}
+# Re-fit the complete cases linear regression using "Recall.bi" instead of "Recall"
+summary(lm(TFR ~ Year + GDP + Recall.bi, data = dat))
+```
+The linear regression results using complete cases and imputed data with noise are very similar. In both models, "Year" and "GDP" are statistically significant predictors. In addition, both models explain ~98% of the variance in the data. However, coefficients of the predictors in the second model have smaller standard errors, indicaiting the second model is more precise.
