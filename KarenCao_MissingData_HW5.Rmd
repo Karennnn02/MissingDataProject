@@ -1,7 +1,7 @@
 ---
-title: "Missing Data HW4: Please refer to Section 2.d), 2.e), 3.d) and 4.c) for this Assignment"
+title: "Missing Data HW5: Please refer to Section 2.f), 2.g), 3.e), 3.f), 4.d) and 4.e) for this Assignment"
 author: "Karen Cao"
-date: "3/1/2019"
+date: "3/10/2019"
 output: pdf_document
 ---
 
@@ -11,6 +11,8 @@ library(dplyr)
 library(plyr)
 library(ggplot2)
 library(mice)
+library(mi)
+library(lattice)
 
 # Set the seed
 set.seed(1234)
@@ -43,6 +45,7 @@ Variables "TFR" and "Recall" have missing values in the dataset.
 * Use mean and regression imputation to fill in missing values in "TFR" (see Part 2.a) and 2.c), respectively).
 * Use mode imputation to fill in missing values in "Recall" (see Part 2 b)).
 * Use regression imputation with noise to fill in missing values in "TFR" (see Part 2.d)) and "Recall.bi", which is a binary variable recoded from 3-level ordinal varaible "Recall" (see Part 2.e)).
+* Use library(mi) and library(mice) with 5 chains and 50 iterations with the default variable types (see Part 2.f) and g))
 
 ```{r}
 # Create a function that performs imputation for missing values
@@ -151,6 +154,26 @@ ggplot(dat, aes(recall.bi.reg.imp.noise)) +
   labs(title = "Bar Chart of Recall Period (Binary)", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
 ```
 
+## f) Missing Data Imputation using library(mi)
+```{r, message = FALSE, warning = FALSE}
+# Create the missing data frame object
+dat.mdf = missing_data.frame(dat[, 1:4])
+# show(dat.mdf)
+
+# Impute until converged using the default variable types
+mi.imp = mi(dat.mdf, n.iter = 50, n.chains = 5)
+mi.conv = mi2BUGS(mi.imp)
+
+# Plot diagnostics
+plot(mi.imp)
+```
+
+## g) Missing Data Imputation using library(mice)
+```{r, message = FALSE, warning = FALSE}
+mice.imp = mice(dat[, 1:4], maxit = 50, m = 5)
+plot(mice.imp)
+```
+
 # 3. Regression Analysis
 Perform regression analysis using 
 
@@ -158,6 +181,8 @@ Perform regression analysis using
 * b) Imputed data where missing values in "TFR" were filled using mean imputation and those in "Recall" were filled using mode imputation,
 * c) Imputed data where missing values in "TFR" were filled using regression imputation, and
 * d) Imputed data where missing values in "TFR" and "Recall.bi" were filled using regression imputation *with noise*
+* e) Imputed data where missing values in "TFR" and "Recall" were filled using library("mi")
+* f) Imputed data where missing values in "TFR" and "Recall" were filled using library("mice")
 
 In all analyses, "TFR" is the dependent variable and "Year", "GDP" and "Recall" are independent variables. 
 
@@ -182,6 +207,25 @@ summary(lm(tfr.reg.imp ~ Year + GDP + Recall, data = dat))
 summary(lm(tfr.reg.imp.noise ~ Year + GDP + recall.bi.reg.imp.noise, data = dat))
 ```
 
+## e) using Imputed Data - library("mi") - "TFR" & "Recall"
+```{r}
+mi.analysis = mi::pool(TFR ~ Year + GDP + Recall, data = mi.imp)
+summary(mi.analysis)
+```
+The equation could be written as:
+$$TFR = 171.49 - 0.08Year + 0.16(Reacall == Slow)$$
+
+## f) using Imputed Data - library("mice") - "TFR" & "Recall"
+```{r}
+mice.analysis = with(mice.imp, lm(TFR ~ Year + GDP + Recall))
+summary(pool(mice.analysis)) # pool together the results
+
+# Check fmi using the rule of thumb
+mice::pool(mice.analysis)$pooled$fmi / 30
+```
+The equation could be written as:
+$$TFR = 144.48 - 0.07Year + 0.02(Recall == Immediate) + 0.25(Reacall == Slow)$$
+
 # 4. Discussion
 ## a) Complete Cases vs. Mean/Mode Imputation
 The linear regression results using complete cases and imputed data are quite different. In the regression using complete cases, all predictors have significant relationship with TFR while when regress using imputed data, "Year" is the only signifiant predictor. Furthermore, the three predictors explain ~98% of the variance in the data under the complete cases approach but they only explain ~52% of the variance using imputed data. This implies that using complete cases may be a better way to perform linear regression instead of using data imputed from mean (for the numeric variable TFR) and mode imputation (for the categorical variable Recall).
@@ -200,3 +244,9 @@ I re-did the analysis after filling missng "Recall" values using mode imputation
 summary(lm(TFR ~ Year + GDP + Recall.bi, data = dat))
 ```
 The linear regression results using complete cases and imputed data with noise are very similar. In both models, "Year" and "GDP" are statistically significant predictors. In addition, both models explain ~98% of the variance in the data. However, coefficients of the predictors in the second model have smaller standard errors, indicaiting the second model is more precise.
+
+## d) Complete Cases vs. Imputation using library ("mi") - "TFR" & "Recall"
+The linear regression results using complete cases and imputed data using library("mi") are very similar. In both models, all predictors have significant relationship with TFR and their coefficients didn't change much. However, standard errors of the predictors decrease a bit, indicating the second model may be more precise.
+
+## e) Complete Cases vs. Imputation using library ("mice") - "TFR" & "Recall"
+The linear regression results using complete cases and imputed data using library("mice") are kind of alike. In both models, all predictors have significant relationship with TFR. However, magnitudes of the coefficients of the predictors have changed as well as standard errors of the coefficients (some have increased and some have decrease). Therefore, we can't say which model is more precise.
