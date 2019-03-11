@@ -1,0 +1,369 @@
+---
+title: "Missing Data Final Project"
+author: "Karen Cao"
+date: "3/10/2019"
+output: pdf_document
+---
+
+```{r, include = FALSE}
+# Load all required dependencies
+library(ggplot2)
+library(mi)
+library(mice)
+library(VIM)
+library(nnet)
+
+# Set the seed
+set.seed(1234)
+```
+
+# 1. Data and Objective
+The dataset is a panel data contains average total fertility rate ("TFR") for women in *India* from 1960 to 2016. The data also contains India's GDP values and recall lag with respect to each TFR value. There're 3 numeric and 1 categorical variables in this dataset and they are:
+
+* TFR: average total fertility for women in India (a.k.a. the average number of children a women will give birth to over her entire fertility period).
+* Year: year ranging from 1960 to 2016.
+* GDP: India's GDP in billion dollars.
+* Recall: length of the recall period between time of data collection and the date for the TFR values. This variable is numeric in the original dataset but has been recoded for the purpose of this analysis. Recall is categorized as 1) "Immediate" if the recall period is less than or equal to 1 year, 2) "Fast" if the recall period is less than or equal to 4 years and greater than 1 year, and 3) "Slow" if the recall period is greater than 4 years. 
+
+The objective is to explore the relationship between the average total fertility rate and the other variables in the dataset using regression while considering TFR as the dependent variable and the rest as independent variables. 
+
+```{r}
+# Read and examine the data
+dat = read.csv(file = "tfr_india.csv", sep = ",")[, 2:5]
+head(dat)
+
+# Create "TFR_missing" and "Recall_missing", which indiate missingness of "TFR" and "Recall", respectively
+# 0 indicates missing value and 1 indicates otherwise
+dat$TFR_missing = ifelse(is.na(dat$TFR), 0, 1)
+dat$Recall_missing = ifelse(is.na(dat$Recall), 0, 1)
+```
+
+# 2. Missing Data Imputation & Regression Analysis
+Only variables "TFR" and "Recall" have missing values in the dataset. 
+
+## 2.1 Listwise Deletion
+Listwise deletion is also known as the complete cases scenario. The linear regression function 'lm()' in R automatically performs listwise deletion on the dataset. Therefore,
+```{r}
+summary(lm(TFR ~ Year + GDP + Recall, data = dat))
+```
+The equation could be written as:
+$$TFR = 166 - 0.08Year + 0.0003GDP + 0.02(Recall == Immediate) + 0.17(Recall == Slow)$$
+
+## 2.2 Mean/Mode Imputation
+Use mean and mode imputations to impute missing values in TFR and Recall, respectively.
+```{r}
+# Create a function that performs imputation for missing values
+# The "method" argument in the function specifies the method used for missing value imputation
+imp = function(x, method){
+  missing = is.na(x)
+  x.obs = x[!missing]
+  imputed = x
+  imputed[missing] = method(x.obs)
+  return (imputed) # Output the imputed vector
+}
+
+# Create a function that returns mode of a categorical variable
+mode = function(x) {
+  ta = table(x)
+  tam = max(ta)
+  if (all(ta == tam))
+    mod = NA
+  else
+    mod = names(ta)[ta == tam]
+  return(mod)
+}
+```
+
+```{r}
+# Mean imputation for "TFR"
+dat$tfr.mean.imp = imp(dat$TFR, method = mean)
+
+# Visualize imputed "TFR"
+ggplot(dat, aes(Year, tfr.mean.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+```
+
+```{r}
+# Mode imputation for "Recall"
+dat$recall.mode.imp = imp(dat$Recall, method = mode)
+
+# Visualize imputed "Recall"
+ggplot(dat, aes(recall.mode.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+```
+
+```{r}
+# Regression analysis
+summary(lm(tfr.mean.imp ~ Year + GDP + recall.mode.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 97 - 0.05Year + 0.0003GDP - 0.09(Recall == Immediate) + 0.46(Recall == Slow)$$
+
+## 2.3 Random Imputation
+Use random imputation to impute missing values in "TFR" and "Recall".
+```{r}
+# Create a function that performs random imputation
+random.imp = function(x){
+  missing = is.na(x)
+  n.missing = sum(missing)
+  x.obs = x[!missing]
+  imputed = x
+  imputed[missing] = sample (x.obs, n.missing, replace = TRUE)
+  return (imputed)
+}
+
+# Perform random imputation on "TFR" and "Recall"
+dat$tfr.rand.imp = random.imp(dat$TFR)
+dat$recall.rand.imp = random.imp(dat$Recall)
+
+# Visualize imputed "TFR" and "Recall"
+ggplot(dat, aes(Year, tfr.rand.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+
+ggplot(dat, aes(recall.rand.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+
+# Regression analysis
+summary(lm(tfr.rand.imp ~ Year + GDP + recall.rand.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 85 - 0.04Year + 0.000001GDP - 0.17(Recall == Immediate) + 0.42(Recall == Slow)$$
+
+## 2.4 Dummy Variable Adjustment Approach
+The dummy variable adjustment approach does not apply to this dataset because the predictor variable that contains missing values, "Recall", is a categorical variable. And this approach *could not* be performed on "TFR" since it is the dependent variable in our regression analysis.
+
+## 2.5 NVCB & LVCF
+Since missingness occur both in the early and later years, I decide to use a combination of NVCB and LVCF on both variables that contain missing values. 
+```{r}
+# Create functions that perform NVCB and LVCF
+nvcb = function(x){
+  for (i in length(dat$TFR):1){
+  if(is.na(x[i])){
+    x[i] = x[i + 1]
+    }
+  }
+  return(x)
+}
+
+lvcf = function(x){
+  for (i in 1:length(dat$TFR)){
+  if(is.na(x[i])){
+    x[i] = x[i - 1]
+    }
+  }
+  return(x)
+}
+
+# Impute missing values in "TFR" and "Recall"
+dat$tfr.lvcf.imp = lvcf(nvcb(dat$TFR))
+dat$recall.lvcf.imp = lvcf(nvcb(dat$Recall))
+
+# Visualize imputed "TFR" and "Recall"
+ggplot(dat, aes(Year, tfr.lvcf.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+
+ggplot(dat, aes(recall.lvcf.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+
+# Regression analysis
+summary(lm(tfr.lvcf.imp ~ Year + GDP + recall.lvcf.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 159 - 0.08Year + 0.0002GDP - 0.45(Recall == Immediate) + 0.15(Recall == Slow)$$
+
+## 2.6 Hotdecking
+Use hotdecking in library(VIM) to impute missing values in "TFR" and "Recall".
+```{r}
+dat$tfr.hd.imp = hotdeck(dat[,1:4])$TFR
+dat$recall.hd.imp = hotdeck(dat[,1:4])$Recall
+
+# Visualize imputed "TFR" and "Recall"
+ggplot(dat, aes(Year, tfr.hd.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+
+ggplot(dat, aes(recall.hd.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+
+# Regression analysis
+summary(lm(tfr.hd.imp ~ Year + GDP + recall.hd.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 64 - 0.03Year - 0.0002GDP - 0.25(Recall == Immediate) + 0.63(Recall == Slow)$$
+
+## 2.7 Regression Imputation
+### 2.7.1 "TFR"
+```{r}
+# First of all, build a model, "fit1", using ONLY completely observed variables "Year" and "GDP"
+fit1 = lm(TFR ~ Year + GDP, data = dat)
+
+# Impute missing "TFR" values based on fit1
+pred = predict(fit1, newdata = ic(dat))
+
+# Create a function that fills in missing TFR values using regression imputation
+reg.imp = function(x, pred.value){
+  missing = is.na(x)
+  imputed = x
+  imputed[missing] = pred.value
+  return (imputed)
+}
+
+dat$tfr.reg.imp = reg.imp(dat$TFR, pred.value = pred)
+
+# Visualize imputed "TFR"
+ggplot(dat, aes(Year, tfr.reg.imp)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+```
+
+### 2.7.2 "Recall"
+```{r}
+# Divide the dataset into one with "Recall" observed and one with "Recall" missing
+dat.recall.cc = dat[!is.na(dat$Recall), ]
+dat.recall.na = dat[is.na(dat$Recall), ]
+
+# Fit a multinomial model since "Recall" has three levels
+# Use "Year" and "GDP" to predict "Recall" since they are completely observed while "TFR" is not
+fit2 = multinom(Recall ~ Year + GDP, data = dat.recall.cc)
+pred2 = predict(fit2, type = "prob", newdata = dat.recall.na)
+
+# Use the predicted probabilities to impute new values
+k = 3 # k is the number of categories
+cat.imps = numeric(nrow(dat.recall.na)) # "nrow(dat.recall.na)" is the number to be imputed
+for(i in 1:nrow(dat.recall.na)){
+  cat.imps[i] = sum(rmultinom(1, 1, pred2[i,]) * c(1:k))
+}
+cat.imps = ifelse(cat.imps == 2, "Immediate", "Fast") # cat.imps # in the original dataset, "Slow" == 3, "Immediate" == 2 and "Fast" is 1
+
+# Fill in missing Recall values using regression imputation
+dat$recall.reg.imp = reg.imp(dat$Recall, pred.value = cat.imps)
+
+# Visualize imputed "Recall"
+ggplot(dat, aes(recall.reg.imp)) + 
+  geom_bar(aes(fill = factor(Recall_missing))) +
+  scale_fill_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) + 
+  labs(title = "Bar Chart of Recall Period", x = "Length of Recall Period", y = "Frequency", fill = "Imputed?")
+```
+
+### 2.7.3 Regression Analysis
+```{r}
+summary(lm(tfr.reg.imp ~ Year + GDP + recall.reg.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 168 - 0.08Year + 0.0003GDP - 0.01(Recall == Immediate) + 0.17(Recall == Slow)$$
+
+## 2.8 Regression Imputation with Noise - "TFR"
+Since "Recall" is neither numerical nor dichotomous, I only imputed missing values in "TFR" using regression imputation *with noise*.
+```{r}
+# Generate noise and add it to the previous imputation
+noise = rnorm(n = length(pred), mean = 0, sd = summary(fit1)$sigma)
+pred.noise = pred + noise
+dat$tfr.reg.imp.noise = reg.imp(dat$TFR, pred.value = pred.noise)
+
+# Visualize imputed "TFR" using regression imputation with noise
+ggplot(dat, aes(Year, tfr.reg.imp.noise)) +
+  geom_point(aes(colour = factor(TFR_missing))) +
+  scale_color_manual(labels = c("Yes", "No"), values = c("#edc649", "#1d9b91")) +
+  labs(title = "Average Total Fertility Rate of India from 1960 to 2016", 
+       y = "TFR", colour = "Imputed?")
+
+# Regression analysis
+summary(lm(tfr.reg.imp.noise ~ Year + GDP + recall.reg.imp, data = dat))
+```
+The equation could be written as:
+$$TFR = 171 - 0.08Year + 0.0003GDP - 0.006(Recall == Immediate) + 0.16(Recall == Slow)$$
+
+## 2.9 Multiple Imputation using library(mi)
+```{r, message = FALSE, warning = FALSE}
+# Create the missing data frame object
+dat.mdf = missing_data.frame(dat[, 1:4])
+
+# Create summary, histogram and image of "dat.mdf"
+summary(dat.mdf)
+hist(dat.mdf)
+image(dat.mdf)
+```
+There's a perfect correlation between the missingness of "TFR" and the missingness of "Recall". Whenever "TFR" is missing, "Recall" is missing as well.
+
+```{r}
+# Check data types
+show(dat.mdf)
+dat.mdf = change(dat.mdf, y = "Recall", what = "type", to = "ordered-categorical") # change "Recall" from "unordered-categorical" to "ordered-categorical"
+dat.mdf = change(dat.mdf, y = "Recall", what = "method", to = "pmm") # change the method of "Recall" from "ppd" to "pmm".
+
+# show(dat.mdf) # check data types again
+
+# Run the mi command
+mi.imp = mi(dat.mdf)
+mi.conv = mi2BUGS(mi.imp)
+
+# Check convergence using traceplots
+# Extract specific variables from the imputations
+mean_tfr = mi.conv[, , 1]
+mean_recall = mi.conv[, , 2]
+
+# Traceplot of mean TFR
+ts.plot(mean_tfr[, 1], col = 1, ylim = c(0, 0.13), main = "Traceplot of Mean TFR", ylab = "Mean TFR")
+lines(mean_tfr[, 2], col = 2)
+lines(mean_tfr[, 3], col = 3)
+lines(mean_tfr[, 4], col = 4)
+
+# Traceplot of mean Recall
+ts.plot(mean_recall[, 1], col = 1, ylim = c(1.7, 2), main = "Traceplot of Mean Recall", ylab = "Mean Recall")
+lines(mean_recall[, 2], col = 2)
+lines(mean_recall[, 3], col = 3)
+lines(mean_recall[, 4], col = 4)
+
+# Both variables converge pretty well
+
+# Check r-hats
+Rhats(mi.imp) # r-hats look pretty good as they are pretty close to 1
+
+# Plot diagnostics
+plot(mi.imp) # the plots look okay too, therefore, I'm not changing any imputation models
+
+# Run pooled analysis
+mi.analysis = mi::pool(TFR ~ Year + GDP + Recall, data = mi.imp)
+summary(mi.analysis)
+```
+The equation could be written as:
+$$TFR = 167 - 0.08Year + 0.0003GDP + 0.13(Recall == Immediate) + 0.07(Recall == Slow)$$
+
+# 3. Results
+Since I'm the most interested in the relationship between "TFR" and "Year", I want to make a table summarizing the coefficients of "Year" as well as their standard errors for every single regression I did earlier in Section 2.
+```{r}
+Approach = c("Complete Cases", "Mean/Mode Imputation", "Random Imputation", 
+             "NVCB/LVCF", "Hotdecking", "Regression Imputation", 
+             "Regression Imputation with Noise", 
+             "Multiple Imputation using library(mi)")
+Coefficients_Year = c(-0.081, -0.047, -0.041, -0.078, -0.030, -0.083, -0.084, -0.082)
+s.e. = c(0.004, 0.013, 0.013, 0.003, 0.012, 0.002, 0.003, 0.003)
+result = as.data.frame(cbind(Approach, Coefficients_Year, s.e.))
+result
+```
+
+# 4. Discussion
+The summary tables in Section 3 shows that imputing missing values using mean/mode and random imputations, as well as hotdecking do not make a lot of sense for this dataset as well as the type of analysis I was doing. Not only because these approaches yielded regression coefficients that are not consistant with those obtained from the rest approaches and have relatively big standard errors, scatter plots showing the relationship between "TFR" and "Year" are pretty off as shown in Section 2.2, 2.3 and 2.6. And it's just very hard to believe that the imputed values obtained from hotdecking, the mean/mode and random imputations are reliable. 
+
+On the other hand, all other approaches yielded similar coefficients and standard errors of the coefficients for "Year". The average coefficient for year is around -0.8 and the average standard error for this coefficient is around 0.003. This means, on average, for each additional year, the average TFR for women in India decreases 0.8. Also, coefficient of year has the smallest standard error under regression imputation among all of the approaches, indicating the linear regression model using (missing) data imputed by regression imputation might be the most presice model. 
